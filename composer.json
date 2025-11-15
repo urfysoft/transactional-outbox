@@ -4,7 +4,8 @@
     "keywords": [
         "Urfysoft",
         "laravel",
-        "transactional-outbox"
+        "transactional-outbox",
+        "outbox"
     ],
     "homepage": "https://github.com/urfysoft/transactional-outbox",
     "license": "MIT",
@@ -30,8 +31,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Urfysoft\\TransactionalOutbox\\": "src/",
-            "Urfysoft\\TransactionalOutbox\\Database\\Factories\\": "database/factories/"
+            "Urfysoft\\TransactionalOutbox\\": "src/"
         }
     },
     "autoload-dev": {

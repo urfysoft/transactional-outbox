@@ -1,84 +1,298 @@
-# Implements the Transactional Outbox pattern for Laravel, ensuring reliable event publishing by storing messages in an outbox table within the same database transaction.
+# Transactional Outbox Pattern for Laravel Microservices
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/urfysoft/transactional-outbox.svg?style=flat-square)](https://packagist.org/packages/urfysoft/transactional-outbox)
-[![GitHub Tests Action Status](https://img.shields.io/github/actions/workflow/status/urfysoft/transactional-outbox/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/urfysoft/transactional-outbox/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![GitHub Code Style Action Status](https://img.shields.io/github/actions/workflow/status/urfysoft/transactional-outbox/fix-php-code-style-issues.yml?branch=main&label=code%20style&style=flat-square)](https://github.com/urfysoft/transactional-outbox/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
-[![Total Downloads](https://img.shields.io/packagist/dt/urfysoft/transactional-outbox.svg?style=flat-square)](https://packagist.org/packages/urfysoft/transactional-outbox)
-
-This is where your description should go. Limit it to a paragraph or two. Consider adding a small example.
-
-## Support us
-
-[<img src="https://github-ads.s3.eu-central-1.amazonaws.com/transactional-outbox.jpg?t=1" width="419px" />](https://spatie.be/github-ad-click/transactional-outbox)
-
-We invest a lot of resources into creating [best in class open source packages](https://spatie.be/open-source). You can support us by [buying one of our paid products](https://spatie.be/open-source/support-us).
-
-We highly appreciate you sending us a postcard from your hometown, mentioning which of our package(s) you are using. You'll find our address on [our contact page](https://spatie.be/about-us). We publish all received postcards on [our virtual postcard wall](https://spatie.be/open-source/postcards).
+Complete Transactional Outbox implementation for reliable communication between microservices.
 
 ## Installation
-
-You can install the package via composer:
 
 ```bash
 composer require urfysoft/transactional-outbox
 ```
 
-You can publish and run the migrations with:
+### Publish assets
 
 ```bash
-php artisan vendor:publish --tag="transactional-outbox-migrations"
+# Publish config and migrations
+php artisan vendor:publish --provider="Urfysoft\TransactionalOutbox\TransactionalOutboxServiceProvider"
+```
+
+This command copies:
+
+- `config/transactional-outbox.php`
+- `database/migrations/*create_outbox_messages_table.php`
+- `database/migrations/*create_inbox_messages_table.php`
+
+Run the migrations after publishing:
+
+```bash
 php artisan migrate
 ```
 
-You can publish the config file with:
+## Configuration
 
-```bash
-php artisan vendor:publish --tag="transactional-outbox-config"
-```
+Key settings live in `config/transactional-outbox.php`.
 
-This is the contents of the published config file:
+- **Service identity & API key**
+  - `service_name`: name announced in outbound headers.
+  - `api_key`: secret used to authenticate inbound webhooks (`X-Api-Key` by default).
+- **Headers**
+  - Override header names or the prefix (default `X-`) via the `headers` array.
+- **Destinations**
+  - Map logical service names to endpoints inside the `services` array.
+- **Driver**
+  - Choose the message broker driver (`http`, `kafka`, `rabbitmq` when implemented).
+- **Processing**
+  - Control batch size, retry limits, and throttling.
+- **Inbox handlers**
+  - Register classes implementing `Urfysoft\TransactionalOutbox\Contracts\InboxEventHandler` under `inbox.handlers`.
+
+Example handler:
 
 ```php
-return [
-];
+namespace App\Messaging;
+
+use Urfysoft\TransactionalOutbox\Contracts\InboxEventHandler;
+use Urfysoft\TransactionalOutbox\Models\InboxMessage;
+
+class PaymentCompletedHandler implements InboxEventHandler
+{
+    public function eventType(): string
+    {
+        return 'PaymentCompleted';
+    }
+
+    public function handle(InboxMessage $message): void
+    {
+        // process payload...
+    }
+}
 ```
 
-Optionally, you can publish the views using
-
-```bash
-php artisan vendor:publish --tag="transactional-outbox-views"
-```
-
-## Usage
+Register the class in `config/transactional-outbox.php` or at runtime:
 
 ```php
-$transactionalOutbox = new Urfysoft\TransactionalOutbox();
-echo $transactionalOutbox->echoPhrase('Hello, Urfysoft!');
+use TransactionalOutbox;
+use App\Messaging\PaymentCompletedHandler;
+
+TransactionalOutbox::registerInboxHandler(new PaymentCompletedHandler());
 ```
 
-## Testing
+## Architecture Overview
 
+### Outbox Pattern (Sending Messages)
+1. Business logic and an outbox message are persisted in **the same database transaction**
+2. A background worker reads the outbox table and publishes to the message broker
+3. Messages are marked as published once delivery succeeds
+4. Failed messages are automatically retried
+
+### Inbox Pattern (Receiving Messages)
+1. Messages arrive via HTTP webhooks or a broker consumer
+2. Each message is stored in the inbox table for **idempotency** (duplicate detection)
+3. A background worker processes inbox messages
+4. Business logic runs in a transaction that also updates the message status
+
+## Usage Examples
+
+### Sending Messages to Other Services
+
+#### Single destination
+```php
+use App\Services\OutboxService;
+
+class OrderController extends Controller
+{
+    public function __construct(private OutboxService $outbox) {}
+    
+    public function createOrder(Request $request)
+    {
+        $order = $this->outbox->executeAndSend(
+            businessLogic: fn() => Order::create($request->all()),
+            destinationService: 'payment-service',
+            eventType: 'OrderCreated',
+            payload: ['order_id' => $orderId, ...],
+            aggregateType: 'Order',
+            aggregateId: $orderId
+        );
+        
+        return response()->json($order, 201);
+    }
+}
+```
+
+#### Multiple destinations
+```php
+$order = $this->outbox->executeAndSendMultiple(
+    businessLogic: fn() => $order->complete(),
+    messages: [
+        [
+            'destination_service' => 'inventory-service',
+            'event_type' => 'OrderCompleted',
+            'payload' => [...],
+            'aggregate_type' => 'Order',
+            'aggregate_id' => $orderId,
+        ],
+        [
+            'destination_service' => 'notification-service',
+            'event_type' => 'OrderCompleted',
+            'payload' => [...],
+            'aggregate_type' => 'Order',
+            'aggregate_id' => $orderId,
+        ],
+    ]
+);
+```
+
+### Receiving Messages from Other Services
+
+#### Event handler registration
+Inside `MessageBrokerServiceProvider`:
+```php
+$processor->registerHandler('PaymentCompleted', function ($message) {
+    $order = Order::find($message->payload['order_id']);
+    $order->update(['payment_status' => 'paid']);
+});
+```
+
+#### Webhook endpoint
+Other services POST to:
+```
+POST https://your-service/api/webhooks/messages
+Headers:
+  X-Message-Id: unique-id
+  X-Source-Service: payment-service
+  X-Event-Type: PaymentCompleted
+  X-API-Key: your-key
+Body: {...payload...}
+```
+
+## Message Broker Options
+
+### HTTP (Default)
+- Simple REST API calls
+- No additional infrastructure required
+- Great for small/medium deployments
+
+### Kafka
 ```bash
-composer test
+composer require nmred/kafka-php
+```
+Set `MESSAGE_BROKER_DRIVER=kafka`
+
+### RabbitMQ
+```bash
+composer require php-amqplib/php-amqplib
+```
+Set `MESSAGE_BROKER_DRIVER=rabbitmq`
+
+## Running the System
+
+### Start the scheduler (required)
+```bash
+php artisan schedule:work
 ```
 
-## Changelog
+### Manual processing
+```bash
+# Process outbox messages
+php artisan outbox:process
 
-Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
+# Process inbox messages
+php artisan inbox:process
 
-## Contributing
+# Process messages for a specific service
+php artisan outbox:process --service=payment-service
 
-Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
+# Retry failed messages
+php artisan outbox:process --retry
+php artisan inbox:process --retry
 
-## Security Vulnerabilities
+# Cleanup old messages
+php artisan messages:cleanup --days=7
+```
 
-Please review [our security policy](../../security/policy) on how to report security vulnerabilities.
+## Configuration Tips
 
-## Credits
+- **Header names:** customize `transactional-outbox.headers` to redefine which headers carry the message id, source service, event type, API key, or to change the prefix used when collecting custom metadata.
+- **Inbox handlers:** list handler classes inside `transactional-outbox.inbox.handlers`. Each class must implement `Urfysoft\TransactionalOutbox\Contracts\InboxEventHandler` (define `eventType()` and `handle()`).
+- **Runtime registration:** handlers can also be registered anywhere via the facade:
 
-- [Jasur Dustmurodov](https://github.com/dorsone)
-- [All Contributors](../../contributors)
+```php
+use TransactionalOutbox;
+use App\Messaging\PaymentCompletedHandler;
 
-## License
+TransactionalOutbox::registerInboxHandler(new PaymentCompletedHandler());
+```
 
-The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
+### Monitoring
+```sql
+-- Pending outbox messages
+SELECT * FROM outbox_messages WHERE status = 'pending';
+
+-- Failed outbox messages
+SELECT * FROM outbox_messages WHERE status = 'failed';
+
+-- Pending inbox messages
+SELECT * FROM inbox_messages WHERE status = 'pending';
+```
+
+## Key Capabilities
+
+✅ **Atomicity**: Business logic and messages live in the same transaction\
+✅ **Reliability**: No data loss even when the broker is down\
+✅ **Idempotency**: Duplicate messages are automatically detected\
+✅ **Retry logic**: Failed deliveries are retried automatically\
+✅ **Multi-broker**: HTTP, Kafka, RabbitMQ drivers\
+✅ **Monitoring**: Track message statuses and errors\
+✅ **Scalability**: Batch processing support
+
+## Best Practices
+
+1. **Always propagate a correlation ID** for request tracing
+2. **Keep payloads small**—send references instead of full objects
+3. **Monitor failed messages** and set up alerts
+4. **Clean up regularly** to remove processed records
+5. **Test idempotency** to ensure handlers tolerate duplicates
+6. **Use a dead-letter queue** after exhausting retries
+7. **Version your events**—include a version in `event_type`
+
+## Troubleshooting
+
+**Messages are not processed:**
+- Ensure the scheduler is running: `php artisan schedule:work`
+- Inspect message statuses in the database
+- Check logs: `tail -f storage/logs/laravel.log`
+
+**Duplicate messages:**
+- The Inbox pattern handles duplicates automatically
+- Verify `message_id` uniqueness
+
+**Failed messages:**
+- Inspect the `last_error` column
+- Use the retry command: `php artisan outbox:process --retry`
+- Confirm the destination service is reachable
+
+## Advanced Topic: Saga Pattern
+
+Combine Transactional Outbox with the Saga pattern for distributed transactions:
+
+```php
+// Orchestration-based saga
+class OrderSaga
+{
+    public function execute(Order $order)
+    {
+        DB::transaction(function () use ($order) {
+            // Step 1: Reserve inventory
+            $this->outbox->sendToService(...);
+            
+            // Step 2: Charge payment
+            $this->outbox->sendToService(...);
+            
+            // Step 3: Confirm the order
+            $this->outbox->sendToService(...);
+        });
+    }
+    
+    // Compensation handlers for failures
+    public function compensate() { ... }
+}
+```
