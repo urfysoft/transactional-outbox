@@ -7,7 +7,7 @@ use Illuminate\Console\Command;
 
 class ProcessOutboxMessages extends Command
 {
-    protected $signature = 'outbox:process
+    protected $signature = 'urfysoft:outbox-process
                             {--service= : Process messages only for the specified service}
                             {--limit=100 : Maximum number of messages per run}
                             {--retry : Reprocess messages marked as failed}';

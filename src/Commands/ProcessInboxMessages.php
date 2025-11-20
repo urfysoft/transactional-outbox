@@ -7,7 +7,7 @@ use Illuminate\Console\Command;
 
 class ProcessInboxMessages extends Command
 {
-    protected $signature = 'inbox:process
+    protected $signature = 'urfysoft:inbox-process
                             {--limit=100 : Maximum number of messages per run}
                             {--retry : Reprocess messages marked as failed}';
 

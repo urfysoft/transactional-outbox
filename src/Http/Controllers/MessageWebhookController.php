@@ -2,7 +2,7 @@
 
 namespace Urfysoft\TransactionalOutbox\Http\Controllers;
 
-use Urfysoft\TransactionalOutbox\Http\Requests\ReceiveMessageRequest;
+use Illuminate\Http\Request;
 use Urfysoft\TransactionalOutbox\Services\InboxService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
@@ -37,7 +37,7 @@ class MessageWebhookController extends Controller
      * - Gather every `X-*` header to keep technical metadata.
      * - Delegate persistence to `InboxService` and log the outcome.
      */
-    public function receive(ReceiveMessageRequest $request): JsonResponse
+    public function __invoke(Request $request): JsonResponse
     {
         try {
             $headersConfig = config('transactional-outbox.headers', []);

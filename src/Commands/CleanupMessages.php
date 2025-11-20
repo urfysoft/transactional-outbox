@@ -16,7 +16,7 @@ class CleanupMessages extends Command
 
     private const string TYPE_BOTH = 'both';
 
-    protected $signature = 'messages:cleanup
+    protected $signature = 'urfysoft:messages-cleanup
                             {--days=7 : Number of days to keep processed messages}
                             {--type=both : Which boxes to purge (outbox, inbox, both)}';
 

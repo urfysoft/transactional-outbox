@@ -31,9 +31,9 @@ php artisan migrate
 
 Key settings live in `config/transactional-outbox.php`.
 
-- **Service identity & API key**
+- **Service identity & Sanctum ability**
   - `service_name`: name announced in outbound headers.
-  - `api_key`: secret used to authenticate inbound webhooks (`X-Api-Key` by default).
+  - `sanctum.required_ability`: ability that incoming Sanctum tokens must possess.
 - **Headers**
   - Override header names or the prefix (default `X-`) via the `headers` array.
 - **Destinations**
@@ -74,6 +74,22 @@ use TransactionalOutbox;
 use App\Messaging\PaymentCompletedHandler;
 
 TransactionalOutbox::registerInboxHandler(new PaymentCompletedHandler());
+```
+
+### Sanctum setup
+
+The package expects [Laravel Sanctum](https://laravel.com/docs/sanctum) to be installed and configured.
+
+```bash
+composer require laravel/sanctum
+php artisan vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider"
+php artisan migrate
+```
+
+Issue tokens for upstream services with the configured ability (default `transactional-outbox`):
+
+```php
+$serviceUser->createToken('microservice:inventory', ['transactional-outbox']);
 ```
 
 ## Architecture Overview
@@ -211,7 +227,7 @@ php artisan messages:cleanup --days=7
 
 ## Configuration Tips
 
-- **Header names:** customize `transactional-outbox.headers` to redefine which headers carry the message id, source service, event type, API key, or to change the prefix used when collecting custom metadata.
+- **Header names:** customize `transactional-outbox.headers` to redefine which headers carry the message id, source service, event type, or to change the prefix used when collecting custom metadata.
 - **Inbox handlers:** list handler classes inside `transactional-outbox.inbox.handlers`. Each class must implement `Urfysoft\TransactionalOutbox\Contracts\InboxEventHandler` (define `eventType()` and `handle()`).
 - **Runtime registration:** handlers can also be registered anywhere via the facade:
 

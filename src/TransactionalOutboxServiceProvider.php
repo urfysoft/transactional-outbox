@@ -6,6 +6,10 @@ use Illuminate\Contracts\Container\Container;
 use InvalidArgumentException;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
+use Urfysoft\TransactionalOutbox\Commands\CleanupMessages;
+use Urfysoft\TransactionalOutbox\Commands\MakeToken;
+use Urfysoft\TransactionalOutbox\Commands\ProcessInboxMessages;
+use Urfysoft\TransactionalOutbox\Commands\ProcessOutboxMessages;
 use Urfysoft\TransactionalOutbox\Contracts\InboxEventHandler;
 use Urfysoft\TransactionalOutbox\Contracts\MessagePublisher;
 use Urfysoft\TransactionalOutbox\Models\InboxMessage;
@@ -26,9 +30,17 @@ class TransactionalOutboxServiceProvider extends PackageServiceProvider
         $package
             ->name('transactional-outbox')
             ->hasConfigFile('transactional-outbox')
+            ->hasRoute('api')
+            ->hasCommands([
+                CleanupMessages::class,
+                MakeToken::class,
+                ProcessInboxMessages::class,
+                ProcessOutboxMessages::class,
+            ])
             ->hasMigrations([
-                'create_outbox_messages_table',
-                'create_inbox_messages_table',
+                '2019_12_14_000001_create_personal_access_tokens_table',
+                '2025_11_14_000002_create_outbox_messages_table',
+                '2025_11_14_000001_create_inbox_messages_table',
             ]);
 
         // Bind the publisher implementation based on the configured driver

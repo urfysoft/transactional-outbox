@@ -1,16 +1,17 @@
 <?php
 
 return [
-    'service_name' => env('URFYSOFT_OUTBOX_SERVICE_NAME', env('APP_NAME', 'laravel')),
-
-    'api_key' => env('URFYSOFT_OUTBOX_API_KEY'),
+    'service_name' => env('URFYSOFT_OUTBOX_SERVICE_NAME', \Illuminate\Support\Str::slug(env('APP_NAME', 'laravel'))),
 
     'headers' => [
         'message_id' => env('URFYSOFT_OUTBOX_HEADERS_MESSAGE_ID', 'X-Message-Id'),
         'source_service' => env('URFYSOFT_OUTBOX_HEADERS_SOURCE_SERVICE', 'X-Source-Service'),
         'event_type' => env('URFYSOFT_OUTBOX_HEADERS_EVENT_TYPE', 'X-Event-Type'),
-        'api_key' => env('URFYSOFT_OUTBOX_HEADERS_API_KEY', 'X-Api-Key'),
         'custom_prefix' => env('URFYSOFT_OUTBOX_HEADERS_PREFIX', 'X-'),
+    ],
+
+    'sanctum' => [
+        'required_ability' => env('URFYSOFT_OUTBOX_SANCTUM_ABILITY', \Illuminate\Support\Str::slug(env('APP_NAME') . ' ' . 'transactional-outbox')),
     ],
 
     'services' => [
